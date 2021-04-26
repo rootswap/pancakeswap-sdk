@@ -1,7 +1,8 @@
 import invariant from 'tiny-invariant'
 import warning from 'tiny-warning'
 import JSBI from 'jsbi'
-import { getAddress } from '@ethersproject/address'
+import { arrayify, isHexString } from '@ethersproject/bytes'
+import { keccak256 } from '@ethersproject/keccak256'
 
 import { BigintIsh, ZERO, ONE, TWO, THREE, SolidityType, SOLIDITY_TYPE_MAXIMA } from './constants'
 
@@ -10,10 +11,41 @@ export function validateSolidityTypeInstance(value: JSBI, solidityType: Solidity
   invariant(JSBI.lessThanOrEqual(value, SOLIDITY_TYPE_MAXIMA[solidityType]), `${value} is not a ${solidityType}.`)
 }
 
+// https://github.com/ethers-io/ethers.js/blob/master/packages/address/src.ts/index.ts#L12
+export function getChecksumAddress(address: string): string {
+  // Missing the 0x prefix
+  if (!address) throw Error('undefined address ' + address)
+
+  if (address.substring(0, 2) !== '0x') {
+    address = '0x' + address
+  }
+  if (!isHexString(address, 20)) {
+    throw Error('invalid address ' + address)
+  }
+  address = address.toLowerCase()
+  const chars = address.substring(2).split('')
+
+  const expanded = new Uint8Array(40)
+  for (let i = 0; i < 40; i++) {
+    expanded[i] = chars[i].charCodeAt(0)
+  }
+
+  const hashed = arrayify(keccak256(expanded))
+  for (let i = 0; i < 40; i += 2) {
+    if (hashed[i >> 1] >> 4 >= 8) {
+      chars[i] = chars[i].toUpperCase()
+    }
+    if ((hashed[i >> 1] & 0x0f) >= 8) {
+      chars[i + 1] = chars[i + 1].toUpperCase()
+    }
+  }
+  return '0x' + chars.join('')
+}
+
 // warns if addresses are not checksummed
 export function validateAndParseAddress(address: string): string {
   try {
-    const checksummedAddress = getAddress(address)
+    const checksummedAddress = getChecksumAddress(address)
     warning(address === checksummedAddress, `${address} is not checksummed.`)
     return checksummedAddress
   } catch (error) {
